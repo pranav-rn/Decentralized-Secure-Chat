@@ -12,6 +12,8 @@ Decentralized Architecture: Peer-to-peer messaging without relying on a centrali
 User-Friendly Interface: Simple and intuitive front-end built with HTML and JavaScript.
 
 
+
+
 Install the python modules:Flask,Flask-SocketIO,eventlet,rsa
 
 The server can be hosted by you so that anyone can use this service.Checkout how it can be hosted for free by using XAMPP and Wordpress.
