@@ -1,2 +1,7 @@
 # Decentralized-Secure-Chat
 Decentralized Secure Chat is a peer-to-peer chat application designed for secure and private communication. Utilizing Flask-SocketIO for real-time communication and a combination of RSA and AES encryption for data security, this chat platform ensures that your messages remain confidential and tamper-proof.
+
+
+Install the python modules:Flask,Flask-SocketIO,eventlet,rsa
+
+The server can be hosted by you so that anyone can use this service.Checkout how it can be hosted for free by using XAMPP and Wordpress.
