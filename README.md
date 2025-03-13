@@ -11,6 +11,8 @@ Decentralized Architecture: Peer-to-peer messaging without relying on a centrali
 
 User-Friendly Interface: Simple and intuitive front-end built with HTML and JavaScript.
 
+To run the service open terminal and run 'python app.py' and open 'http://127.0.0.1:5000' on any browser to run it.
+
 
 
 
