@@ -3,19 +3,150 @@
 <head>
     <title>Decentralized Chat</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .message {
+            margin-bottom: 8px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .system-message {
+            background-color: #f0f0f0;
+            font-style: italic;
+        }
+        .file-message {
+            background-color: #e1f5fe;
+        }
+        .file-controls {
+            margin-top: 20px;
+        }
+        .hidden {
+            display: none;
+        }
+        progress {
+            width: 100%;
+        }
+        .file-preview {
+            max-width: 200px;
+            max-height: 200px;
+            margin-top: 10px;
+        }
+        .download-link {
+            display: inline-block;
+            margin-top: 5px;
+            padding: 5px 10px;
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Decentralized Chat</h1>
-    <input id="username" placeholder="Enter username" />
-    <button onclick="setUsername()">Set Username</button><br><br>
-    <input id="message" placeholder="Type your message here..."/>
-    <button onclick="sendMessage()">Send</button>
-    <ul id="messages"></ul>
+    <h1>Decentralized Chat with Fast File Transfer</h1>
+    
+    <div id="login-section">
+        <input id="username" placeholder="Enter username" />
+        <button onclick="setUsername()">Set Username</button>
+    </div>
+    
+    <div id="chat-section" class="hidden">
+        <div class="message-controls">
+            <input id="message" placeholder="Type your message here..."/>
+            <button onclick="sendMessage()">Send</button>
+        </div>
+        
+        <div class="file-controls">
+            <input type="file" id="file-input" />
+            <button onclick="sendFile()">Send File</button>
+            <div id="upload-progress-container" class="hidden">
+                <p>Uploading: <span id="file-name-display"></span></p>
+                <progress id="upload-progress" value="0" max="100"></progress>
+            </div>
+        </div>
+        
+        <div id="messages"></div>
+    </div>
 
     <script>
-        const socket = io('https://ff29-223-181-110-36.ngrok-free.app'); //ip-forwarding for ngrok 
+        const socket = io('https://c515-2405-201-d029-f86d-5d03-dae1-b725-de6f.ngrok-free.app', {
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            timeout: 20000,
+            transports: ['websocket'],
+            upgrade: false
+        });
+        
         let username = '';
         let symmetricKey;
+        // Increase chunk size for faster transfer but not too large to cause timeout
+        const CHUNK_SIZE = 256 * 1024; // 256KB chunks
+        const MAX_CHUNKS_IN_FLIGHT = 5; // Number of chunks to send in parallel
+        const fileTransfers = {}; // Track incoming file transfers
+        
+        // Show system message
+        function addSystemMessage(message) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', 'system-message');
+            messageElement.textContent = message;
+            document.getElementById('messages').appendChild(messageElement);
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+        
+        // Show chat message
+        function addChatMessage(user, message) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            messageElement.textContent = `${user}: ${message}`;
+            document.getElementById('messages').appendChild(messageElement);
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+        
+        // Add file message with download link
+        function addFileMessage(user, filename, fileBlob, fileType) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', 'file-message');
+            
+            const messageText = document.createElement('div');
+            messageText.textContent = `${user} shared a file: ${filename}`;
+            messageElement.appendChild(messageText);
+            
+            // Create object URL for the file
+            const fileURL = URL.createObjectURL(fileBlob);
+            
+            // If it's an image, show preview
+            if (fileType && fileType.startsWith('image/')) {
+                const preview = document.createElement('img');
+                preview.src = fileURL;
+                preview.alt = filename;
+                preview.classList.add('file-preview');
+                messageElement.appendChild(preview);
+            }
+            
+            // Add download link
+            const downloadLink = document.createElement('a');
+            downloadLink.href = fileURL;
+            downloadLink.download = filename;
+            downloadLink.textContent = 'Download';
+            downloadLink.classList.add('download-link');
+            messageElement.appendChild(downloadLink);
+            
+            document.getElementById('messages').appendChild(messageElement);
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
 
         socket.on('symmetric_key', (data) => {
             symmetricKey = data.symmetric_key;
@@ -35,7 +166,7 @@
             const combined = new Uint8Array(iv.length + encMessage.byteLength);
             combined.set(iv);
             combined.set(new Uint8Array(encMessage), iv.length);
-            return btoa(String.fromCharCode(...combined));
+            return btoa(String.fromCharCode(...new Uint8Array(combined)));
         }
 
         async function decryptMessage(encMessage) {
@@ -46,39 +177,347 @@
             const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encBuffer);
             return new TextDecoder().decode(decrypted);
         }
+        
+        // Efficient binary encoding - uses a more efficient approach to avoid memory issues
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+        
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+        
+        // Optimized encryption for binary data
+        async function encryptBinary(data) {
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const key = await generateKey();
+            const encData = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+            
+            // Combine IV and encrypted data more efficiently
+            const combined = new Uint8Array(iv.length + encData.byteLength);
+            combined.set(iv);
+            combined.set(new Uint8Array(encData), iv.length);
+            
+            return arrayBufferToBase64(combined);
+        }
+        
+        // Optimized decryption for binary data
+        async function decryptBinary(encDataBase64) {
+            const combined = new Uint8Array(base64ToArrayBuffer(encDataBase64));
+            const iv = combined.slice(0, 12);
+            const encBuffer = combined.slice(12);
+            const key = await generateKey();
+            return await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encBuffer);
+        }
 
         function setUsername() {
             username = document.getElementById('username').value;
-            document.getElementById('username').disabled = true;
+            if (!username) {
+                alert('Please enter a username');
+                return;
+            }
+            document.getElementById('login-section').classList.add('hidden');
+            document.getElementById('chat-section').classList.remove('hidden');
             socket.emit('connect_user', { user: username });
+            addSystemMessage('You joined the chat');
         }
 
         async function sendMessage() {
             const message = document.getElementById('message').value;
             if (message && username) {
                 const encryptedData = await encryptMessage(message);
-                console.log(`Sending message: ${encryptedData}`);
                 socket.emit('message', { user: username, data: encryptedData });
                 document.getElementById('message').value = '';
             } else {
                 alert('Please enter a message and set a username.');
             }
         }
+        
+        // Optimized file sending with parallel chunk processing
+        async function sendFile() {
+            const fileInput = document.getElementById('file-input');
+            if (!fileInput.files.length) {
+                alert('Please select a file');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            const filename = file.name;
+            const fileSize = file.size;
+            const fileType = file.type;
+            
+            // Display upload progress
+            document.getElementById('upload-progress-container').classList.remove('hidden');
+            document.getElementById('file-name-display').textContent = filename;
+            document.getElementById('upload-progress').value = 0;
+            
+            // Calculate total chunks
+            const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
+            
+            // Create a binary hash of the file for verification
+            const fileArrayBuffer = await file.arrayBuffer();
+            const fileHash = await crypto.subtle.digest('SHA-256', fileArrayBuffer);
+            const fileHashBase64 = arrayBufferToBase64(fileHash);
+            
+            // Notify server about starting file transfer
+            socket.emit('file_transfer_start', {
+                user: username,
+                filename: filename,
+                file_size: fileSize,
+                file_type: fileType,
+                file_hash: fileHashBase64
+            });
+            
+            // Set up parallel chunk processing
+            let completedChunks = 0;
+            let activeChunks = 0;
+            let nextChunkToProcess = 0;
+            
+            const processNextChunk = async () => {
+                if (nextChunkToProcess >= totalChunks) return;
+                
+                const chunkId = nextChunkToProcess++;
+                activeChunks++;
+                
+                try {
+                    const start = chunkId * CHUNK_SIZE;
+                    const end = Math.min(start + CHUNK_SIZE, fileSize);
+                    const chunk = file.slice(start, end);
+                    
+                    // Read chunk as ArrayBuffer
+                    const arrayBuffer = await chunk.arrayBuffer();
+                    
+                    // Encrypt chunk
+                    const encryptedChunk = await encryptBinary(arrayBuffer);
+                    
+                    // Send chunk to server
+                    socket.emit('file_chunk', {
+                        user: username,
+                        filename: filename,
+                        chunk_id: chunkId,
+                        total_chunks: totalChunks,
+                        chunk: encryptedChunk
+                    }, () => {
+                        // This is the acknowledgement callback
+                        completedChunks++;
+                        activeChunks--;
+                        
+                        // Update progress
+                        document.getElementById('upload-progress').value = (completedChunks / totalChunks) * 100;
+                        
+                        // Process next chunk if needed
+                        processNextChunk();
+                        
+                        // Check if all chunks are sent
+                        if (completedChunks === totalChunks) {
+                            // Notify server about completed file transfer
+                            socket.emit('file_transfer_complete', {
+                                user: username,
+                                filename: filename,
+                                file_hash: fileHashBase64
+                            });
+                            
+                            // Reset file input and hide progress
+                            fileInput.value = '';
+                            setTimeout(() => {
+                                document.getElementById('upload-progress-container').classList.add('hidden');
+                            }, 2000);
+                            
+                            addSystemMessage(`You shared file: ${filename}`);
+                        }
+                    });
+                } catch (error) {
+                    console.error(`Error processing chunk ${chunkId}:`, error);
+                    activeChunks--;
+                    processNextChunk();
+                }
+            };
+            
+            // Start parallel chunk processing
+            for (let i = 0; i < Math.min(MAX_CHUNKS_IN_FLIGHT, totalChunks); i++) {
+                processNextChunk();
+            }
+        }
 
         socket.on('message', async function(data) {
-            console.log(`Received message: ${JSON.stringify(data)}`);
-            const decryptedMessage = await decryptMessage(data.data);
-            const li = document.createElement('li');
-            li.textContent = `${data.user}: ${decryptedMessage}`;
-            document.getElementById('messages').appendChild(li);
+            try {
+                const decryptedMessage = await decryptMessage(data.data);
+                addChatMessage(data.user, decryptedMessage);
+            } catch (error) {
+                console.error('Error decrypting message:', error);
+                addSystemMessage(`Error decrypting message from ${data.user}`);
+            }
         });
+        
+        // File transfer events
+        socket.on('file_transfer_start', function(data) {
+            if (data.user === username) return; // Skip our own uploads
+            
+            // Initialize file tracking
+            fileTransfers[data.filename] = {
+                chunks: new Array(Math.ceil(data.file_size / CHUNK_SIZE)),
+                receivedChunks: 0,
+                totalChunks: Math.ceil(data.file_size / CHUNK_SIZE),
+                fileType: data.file_type,
+                fileSize: data.file_size,
+                fileHash: data.file_hash
+            };
+            
+            addSystemMessage(`${data.user} is sending a file: ${data.filename} (${formatFileSize(data.file_size)})`);
+        });
+        
+        socket.on('file_chunk', async function(data) {
+            if (data.user === username) return; // Skip our own uploads
+            
+            try {
+                const filename = data.filename;
+                
+                // Check if we're tracking this file
+                if (!fileTransfers[filename]) {
+                    console.error(`Received chunk for untracked file: ${filename}`);
+                    return;
+                }
+                
+                // Store the encrypted chunk first (decrypt only when complete)
+                fileTransfers[filename].chunks[data.chunk_id] = data.chunk;
+                fileTransfers[filename].receivedChunks++;
+            } catch (error) {
+                console.error('Error storing file chunk:', error);
+            }
+        });
+        
+        socket.on('file_transfer_complete', async function(data) {
+            if (data.user === username) return; // Skip our own uploads
+            
+            try {
+                const filename = data.filename;
+                
+                // Check if we have all chunks
+                const fileData = fileTransfers[filename];
+                if (!fileData || fileData.receivedChunks !== fileData.totalChunks) {
+                    console.error(`Incomplete file transfer for ${filename}: ${fileData.receivedChunks}/${fileData.totalChunks}`);
+                    
+                    // Wait a bit for any remaining chunks to arrive
+                    setTimeout(async () => {
+                        if (fileData.receivedChunks === fileData.totalChunks) {
+                            await processCompletedFile(data.user, filename, fileData);
+                        } else {
+                            addSystemMessage(`File transfer failed for ${filename} from ${data.user}`);
+                        }
+                    }, 2000);
+                    return;
+                }
+                
+                await processCompletedFile(data.user, filename, fileData);
+            } catch (error) {
+                console.error('Error completing file transfer:', error);
+                addSystemMessage(`Error receiving file ${data.filename} from ${data.user}`);
+            }
+        });
+        
+        async function processCompletedFile(user, filename, fileData) {
+            // Decrypt all chunks
+            const decryptedChunks = [];
+            for (let i = 0; i < fileData.chunks.length; i++) {
+                if (!fileData.chunks[i]) {
+                    console.error(`Missing chunk ${i} for file ${filename}`);
+                    return;
+                }
+                const decryptedChunk = await decryptBinary(fileData.chunks[i]);
+                decryptedChunks.push(new Uint8Array(decryptedChunk));
+            }
+            
+            // Combine all chunks
+            let totalLength = 0;
+            for (const chunk of decryptedChunks) {
+                totalLength += chunk.byteLength;
+            }
+            
+            const combinedArray = new Uint8Array(totalLength);
+            let position = 0;
+            
+            for (const chunk of decryptedChunks) {
+                combinedArray.set(chunk, position);
+                position += chunk.byteLength;
+            }
+            
+            // Create blob from the combined data
+            const blob = new Blob([combinedArray], { type: fileData.fileType || 'application/octet-stream' });
+            
+            // Verify hash if available
+            if (fileData.fileHash) {
+                const actualHash = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+                const actualHashBase64 = arrayBufferToBase64(actualHash);
+                
+                if (actualHashBase64 !== fileData.fileHash) {
+                    console.warn('File hash verification failed');
+                }
+            }
+            
+            // Display the file in chat
+            addFileMessage(user, filename, blob, fileData.fileType);
+            
+            // Clean up
+            delete fileTransfers[filename];
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' bytes';
+            else if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            else if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+            else return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+        }
 
         socket.on('connect', () => {
             console.log('Connected to server');
+            addSystemMessage('Connected to server');
+            
+            // If we had a username before, reconnect with it
+            if (username) {
+                socket.emit('connect_user', { user: username });
+            }
         });
 
         socket.on('disconnect', () => {
             console.log('Disconnected from server');
+            addSystemMessage('Disconnected from server. Attempting to reconnect...');
+        });
+        
+        socket.on('reconnect', (attemptNumber) => {
+            console.log(`Reconnected after ${attemptNumber} attempts`);
+            addSystemMessage('Reconnected to server');
+            
+            // Re-authenticate with username
+            if (username) {
+                socket.emit('connect_user', { user: username });
+            }
+        });
+        
+        socket.on('reconnect_attempt', (attemptNumber) => {
+            console.log(`Reconnection attempt ${attemptNumber}`);
+        });
+        
+        socket.on('error', (error) => {
+            console.error('Socket error:', error);
+        });
+        
+        // Enable pressing Enter to send messages
+        document.getElementById('message').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
         });
     </script>
 </body>
