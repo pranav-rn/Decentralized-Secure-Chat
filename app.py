@@ -9,7 +9,7 @@ import base64
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
-socketio = SocketIO(app, async_mode='eventlet')
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
 
 # Set up logging
 logging.basicConfig(
@@ -72,6 +72,6 @@ def handle_disconnect():
             break
 
 if __name__ == '__main__':
-    HOST = '127.0.0.1'
+    HOST = '0.0.0.0'
     PORT = 5000
     socketio.run(app, host=HOST, port=PORT, debug=False)
