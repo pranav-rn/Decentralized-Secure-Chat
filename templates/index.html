@@ -1,87 +1,386 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Decentralized Chat</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Chat</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
+        :root {
+            --primary-color: #2e3b4e;
+            --secondary-color: #3498db;
+            --accent-color: #2ecc71;
+            --bg-color: #f9f9f9;
+            --text-color: #333;
+            --light-gray: #e0e0e0;
+            --dark-gray: #7f8c8d;
+            --chat-bg: #fff;
+            --system-msg-bg: #f0f0f0;
+            --file-msg-bg: #e1f5fe;
+            --shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            --header-height: 60px;
+            --footer-height: 70px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body, html {
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            max-height: 100vh;
+        }
+
+        /* Header Styles */
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            box-shadow: var(--shadow);
+            z-index: 10;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+
+        .online-status {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--accent-color);
+            margin-right: 5px;
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+        }
+
+        /* Login Section */
+        #login-section {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: calc(100vh - var(--header-height));
+            background-color: var(--bg-color);
             padding: 20px;
         }
-        #messages {
-            height: 400px;
+
+        .login-card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: var(--shadow);
+            text-align: center;
+        }
+
+        .login-card h2 {
+            margin-bottom: 20px;
+            color: var(--primary-color);
+        }
+
+        /* Chat Section */
+        #chat-section {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - var(--header-height));
+        }
+
+        /* Messages Area */
+        .messages-container {
+            flex: 1;
             overflow-y: auto;
-            border: 1px solid #ccc;
-            padding: 10px;
-            margin-top: 10px;
+            padding: 15px;
+            background-color: var(--chat-bg);
         }
+
         .message {
-            margin-bottom: 8px;
-            padding: 8px;
-            border-radius: 4px;
+            margin-bottom: 15px;
+            padding: 12px 15px;
+            border-radius: 8px;
+            max-width: 80%;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            position: relative;
+            line-height: 1.4;
         }
+
+        .message-username {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: var(--primary-color);
+        }
+
+        .message-content {
+            word-break: break-word;
+        }
+
+        .message-time {
+            font-size: 0.7rem;
+            color: var(--dark-gray);
+            position: absolute;
+            bottom: 5px;
+            right: 10px;
+        }
+
+        .own-message {
+            background-color: var(--secondary-color);
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 0;
+        }
+
+        .other-message {
+            background-color: var(--light-gray);
+            border-bottom-left-radius: 0;
+        }
+
         .system-message {
-            background-color: #f0f0f0;
+            background-color: var(--system-msg-bg);
+            color: var(--dark-gray);
+            text-align: center;
             font-style: italic;
+            margin: 10px auto;
+            padding: 8px 15px;
+            border-radius: 20px;
+            max-width: 70%;
+            box-shadow: none;
         }
+
         .file-message {
-            background-color: #e1f5fe;
+            background-color: var(--file-msg-bg);
         }
+
+        /* Chat Input Area */
+        .chat-controls {
+            display: flex;
+            flex-direction: column;
+            background-color: white;
+            border-top: 1px solid var(--light-gray);
+            padding: 15px;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+        }
+
+        .message-controls {
+            display: flex;
+            margin-bottom: 10px;
+        }
+
         .file-controls {
-            margin-top: 20px;
+            display: flex;
+            align-items: center;
         }
-        .hidden {
-            display: none;
+
+        /* Inputs and Buttons */
+        input[type="text"], input[type="file"] {
+            padding: 12px 15px;
+            border: 1px solid var(--light-gray);
+            border-radius: 4px;
+            font-size: 1rem;
+            flex: 1;
         }
-        progress {
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--secondary-color);
+        }
+
+        button {
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 12px 20px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: #243547;
+        }
+
+        .btn-accent {
+            background-color: var(--accent-color);
+        }
+
+        .btn-accent:hover {
+            background-color: #27ae60;
+        }
+
+        /* File Upload */
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            background-color: var(--light-gray);
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            font-size: 100px;
+            opacity: 0;
+            right: 0;
+            top: 0;
+            cursor: pointer;
+        }
+
+        .file-input-button {
+            padding: 12px 15px;
+            display: inline-block;
+            cursor: pointer;
+        }
+
+        #file-name {
+            margin-left: 10px;
+            font-size: 0.9rem;
+            color: var(--dark-gray);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 150px;
+        }
+
+        /* Progress Bar */
+        #upload-progress-container {
+            margin-top: 10px;
             width: 100%;
         }
+
+        progress {
+            width: 100%;
+            height: 10px;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        /* File Preview */
         .file-preview {
             max-width: 200px;
             max-height: 200px;
             margin-top: 10px;
+            border-radius: 4px;
         }
+
+        /* Download Link */
         .download-link {
             display: inline-block;
-            margin-top: 5px;
-            padding: 5px 10px;
-            background-color: #4CAF50;
+            margin-top: 8px;
+            padding: 5px 15px;
+            background-color: var(--accent-color);
             color: white;
             text-decoration: none;
             border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .download-link:hover {
+            background-color: #27ae60;
+        }
+
+        /* Utilities */
+        .hidden {
+            display: none !important;
+        }
+
+        @media screen and (min-width: 768px) {
+            header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .message {
+                max-width: 60%;
+            }
         }
     </style>
 </head>
 <body>
-    <h1>Decentralized Chat with Fast File Transfer</h1>
-    
-    <div id="login-section">
-        <input id="username" placeholder="Enter username" />
-        <button onclick="setUsername()">Set Username</button>
-    </div>
-    
-    <div id="chat-section" class="hidden">
-        <div class="message-controls">
-            <input id="message" placeholder="Type your message here..."/>
-            <button onclick="sendMessage()">Send</button>
-        </div>
-        
-        <div class="file-controls">
-            <input type="file" id="file-input" />
-            <button onclick="sendFile()">Send File</button>
-            <div id="upload-progress-container" class="hidden">
-                <p>Uploading: <span id="file-name-display"></span></p>
-                <progress id="upload-progress" value="0" max="100"></progress>
+    <div class="app-container">
+        <header>
+            <h1>Secure Decentralized Chat</h1>
+            <div class="online-status">
+                <div class="status-indicator"></div>
+                <span class="status-text">Connected</span>
+            </div>
+        </header>
+
+        <div id="login-section">
+            <div class="login-card">
+                <h2>Join Secure Chat</h2>
+                <input type="text" id="username" placeholder="Enter your username" />
+                <button class="btn-primary" onclick="setUsername()">Connect</button>
             </div>
         </div>
-        
-        <div id="messages"></div>
+
+        <div id="chat-section" class="hidden">
+            <div id="messages" class="messages-container"></div>
+            
+            <div class="chat-controls">
+                <div class="message-controls">
+                    <input type="text" id="message" placeholder="Type your message..." />
+                    <button class="btn-primary" onclick="sendMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                
+                <div class="file-controls">
+                    <div class="file-input-wrapper">
+                        <span class="file-input-button">
+                            <i class="fas fa-paperclip"></i> Attach File
+                        </span>
+                        <input type="file" id="file-input" onchange="updateFileName()" />
+                    </div>
+                    <span id="file-name"></span>
+                    <button class="btn-accent" onclick="sendFile()">
+                        <i class="fas fa-upload"></i> Send
+                    </button>
+                </div>
+                
+                <div id="upload-progress-container" class="hidden">
+                    <p>Uploading: <span id="file-name-display"></span> - <span id="upload-percentage">0%</span></p>
+                    <progress id="upload-progress" value="0" max="100"></progress>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        const socket = io('https://c515-2405-201-d029-f86d-5d03-dae1-b725-de6f.ngrok-free.app', {
+        const socket = io('https://1dcd-223-31-218-223.ngrok-free.app', {
             reconnection: true,
             reconnectionAttempts: 5,
             reconnectionDelay: 1000,
@@ -97,8 +396,23 @@
         const MAX_CHUNKS_IN_FLIGHT = 5; // Number of chunks to send in parallel
         const fileTransfers = {}; // Track incoming file transfers
         
+        // Update connection status
+        function updateConnectionStatus(connected) {
+            const statusIndicator = document.querySelector('.status-indicator');
+            const statusText = document.querySelector('.status-text');
+            
+            if (connected) {
+                statusIndicator.style.backgroundColor = 'var(--accent-color)';
+                statusText.textContent = 'Connected';
+            } else {
+                statusIndicator.style.backgroundColor = '#e74c3c';
+                statusText.textContent = 'Disconnected';
+            }
+        }
+        
         // Show system message
         function addSystemMessage(message) {
+            const timestamp = new Date().toLocaleTimeString();
             const messageElement = document.createElement('div');
             messageElement.classList.add('message', 'system-message');
             messageElement.textContent = message;
@@ -107,22 +421,56 @@
         }
         
         // Show chat message
-        function addChatMessage(user, message) {
+        function addChatMessage(user, message, isOwnMessage = false) {
+            const timestamp = new Date().toLocaleTimeString();
             const messageElement = document.createElement('div');
             messageElement.classList.add('message');
-            messageElement.textContent = `${user}: ${message}`;
+            
+            if (isOwnMessage) {
+                messageElement.classList.add('own-message');
+            } else {
+                messageElement.classList.add('other-message');
+            }
+            
+            const usernameElement = document.createElement('div');
+            usernameElement.classList.add('message-username');
+            usernameElement.textContent = user;
+            
+            const contentElement = document.createElement('div');
+            contentElement.classList.add('message-content');
+            contentElement.textContent = message;
+            
+            const timeElement = document.createElement('div');
+            timeElement.classList.add('message-time');
+            timeElement.textContent = timestamp;
+            
+            messageElement.appendChild(usernameElement);
+            messageElement.appendChild(contentElement);
+            messageElement.appendChild(timeElement);
+            
             document.getElementById('messages').appendChild(messageElement);
             document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         }
         
         // Add file message with download link
-        function addFileMessage(user, filename, fileBlob, fileType) {
+        function addFileMessage(user, filename, fileBlob, fileType, isOwnMessage = false) {
+            const timestamp = new Date().toLocaleTimeString();
             const messageElement = document.createElement('div');
             messageElement.classList.add('message', 'file-message');
             
-            const messageText = document.createElement('div');
-            messageText.textContent = `${user} shared a file: ${filename}`;
-            messageElement.appendChild(messageText);
+            if (isOwnMessage) {
+                messageElement.classList.add('own-message');
+            } else {
+                messageElement.classList.add('other-message');
+            }
+            
+            const usernameElement = document.createElement('div');
+            usernameElement.classList.add('message-username');
+            usernameElement.textContent = user;
+            
+            const contentElement = document.createElement('div');
+            contentElement.classList.add('message-content');
+            contentElement.innerHTML = `<i class="fas fa-file"></i> ${filename}`;
             
             // Create object URL for the file
             const fileURL = URL.createObjectURL(fileBlob);
@@ -140,12 +488,31 @@
             const downloadLink = document.createElement('a');
             downloadLink.href = fileURL;
             downloadLink.download = filename;
-            downloadLink.textContent = 'Download';
+            downloadLink.innerHTML = '<i class="fas fa-download"></i> Download';
             downloadLink.classList.add('download-link');
+            
+            const timeElement = document.createElement('div');
+            timeElement.classList.add('message-time');
+            timeElement.textContent = timestamp;
+            
+            messageElement.appendChild(usernameElement);
+            messageElement.appendChild(contentElement);
             messageElement.appendChild(downloadLink);
+            messageElement.appendChild(timeElement);
             
             document.getElementById('messages').appendChild(messageElement);
             document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+
+        function updateFileName() {
+            const fileInput = document.getElementById('file-input');
+            const fileNameDisplay = document.getElementById('file-name');
+            
+            if (fileInput.files.length > 0) {
+                fileNameDisplay.textContent = fileInput.files[0].name;
+            } else {
+                fileNameDisplay.textContent = '';
+            }
         }
 
         socket.on('symmetric_key', (data) => {
@@ -240,8 +607,11 @@
                 const encryptedData = await encryptMessage(message);
                 socket.emit('message', { user: username, data: encryptedData });
                 document.getElementById('message').value = '';
+            } else if (!message) {
+                // Silent fail for empty messages
+                return;
             } else {
-                alert('Please enter a message and set a username.');
+                alert('Please set a username first.');
             }
         }
         
@@ -262,6 +632,7 @@
             document.getElementById('upload-progress-container').classList.remove('hidden');
             document.getElementById('file-name-display').textContent = filename;
             document.getElementById('upload-progress').value = 0;
+            document.getElementById('upload-percentage').textContent = '0%';
             
             // Calculate total chunks
             const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
@@ -315,7 +686,9 @@
                         activeChunks--;
                         
                         // Update progress
-                        document.getElementById('upload-progress').value = (completedChunks / totalChunks) * 100;
+                        const progressPercentage = Math.round((completedChunks / totalChunks) * 100);
+                        document.getElementById('upload-progress').value = progressPercentage;
+                        document.getElementById('upload-percentage').textContent = `${progressPercentage}%`;
                         
                         // Process next chunk if needed
                         processNextChunk();
@@ -331,11 +704,14 @@
                             
                             // Reset file input and hide progress
                             fileInput.value = '';
+                            document.getElementById('file-name').textContent = '';
                             setTimeout(() => {
                                 document.getElementById('upload-progress-container').classList.add('hidden');
                             }, 2000);
                             
-                            addSystemMessage(`You shared file: ${filename}`);
+                            // Create a local display of the file you shared
+                            const blob = new Blob([fileArrayBuffer], { type: fileType || 'application/octet-stream' });
+                            addFileMessage(username, filename, blob, fileType, true);
                         }
                     });
                 } catch (error) {
@@ -354,7 +730,8 @@
         socket.on('message', async function(data) {
             try {
                 const decryptedMessage = await decryptMessage(data.data);
-                addChatMessage(data.user, decryptedMessage);
+                const isOwnMessage = data.user === username;
+                addChatMessage(data.user, decryptedMessage, isOwnMessage);
             } catch (error) {
                 console.error('Error decrypting message:', error);
                 addSystemMessage(`Error decrypting message from ${data.user}`);
@@ -467,7 +844,7 @@
             }
             
             // Display the file in chat
-            addFileMessage(user, filename, blob, fileData.fileType);
+            addFileMessage(user, filename, blob, fileData.fileType, false);
             
             // Clean up
             delete fileTransfers[filename];
@@ -482,6 +859,7 @@
 
         socket.on('connect', () => {
             console.log('Connected to server');
+            updateConnectionStatus(true);
             addSystemMessage('Connected to server');
             
             // If we had a username before, reconnect with it
@@ -492,11 +870,13 @@
 
         socket.on('disconnect', () => {
             console.log('Disconnected from server');
+            updateConnectionStatus(false);
             addSystemMessage('Disconnected from server. Attempting to reconnect...');
         });
         
         socket.on('reconnect', (attemptNumber) => {
             console.log(`Reconnected after ${attemptNumber} attempts`);
+            updateConnectionStatus(true);
             addSystemMessage('Reconnected to server');
             
             // Re-authenticate with username
@@ -504,21 +884,37 @@
                 socket.emit('connect_user', { user: username });
             }
         });
-        
-        socket.on('reconnect_attempt', (attemptNumber) => {
-            console.log(`Reconnection attempt ${attemptNumber}`);
+
+        socket.on('reconnect_failed', () => {
+            console.log('Failed to reconnect');
+            updateConnectionStatus(false);
+            addSystemMessage('Failed to reconnect to server. Please refresh the page.');
         });
-        
-        socket.on('error', (error) => {
-            console.error('Socket error:', error);
+
+        socket.on('user_joined', (data) => {
+            addSystemMessage(`${data.user} joined the chat`);
         });
-        
-        // Enable pressing Enter to send messages
+
+        socket.on('user_left', (data) => {
+            addSystemMessage(`${data.user} left the chat`);
+        });
+
+        // Enter key to send message
         document.getElementById('message').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 sendMessage();
             }
         });
+
+        // Enter key to submit username
+        document.getElementById('username').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                setUsername();
+            }
+        });
+
+        // Initial connection check
+        updateConnectionStatus(socket.connected);
     </script>
 </body>
 </html>
